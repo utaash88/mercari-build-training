@@ -29,12 +29,27 @@ db_path = pathlib.Path(__file__).parent.resolve() /"mercari.sqlite3"
 images = pathlib.Path(__file__).parent.resolve() /"images"
 items_json_path = pathlib.Path(__file__).parent.resolve() / "items.json"
 
-conn = sqlite3.connect(db_path)
-cur = conn.cursor()
+def initialize_database():
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            category TEXT,
+            image_name TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 def save_item_db(name, category, image_name):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
     cur.execute("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)", (name, category, image_name))
     conn.commit()
+    conn.close() 
 
 @app.get("/")
 def root():
@@ -85,10 +100,33 @@ async def add_item(name: str = Form(...), category: str = Form(...), image: Uplo
 
 @app.get("/items")
 def get_items():
-    # JSONファイルからアイテムを読み込み
+    """ # JSONファイルからアイテムを読み込み
     with open(items_json_path, "r") as f:
         items = json.load(f)
-    return items
+    return items """
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT items.id, items.name, categories.name as category, items.image_name
+        FROM items
+        INNER JOIN categories ON items.category_id = categories.id
+    """)
+    items = cur.fetchall()
+
+    conn.close()
+
+    # 取得したデータを適切な形式に整形して返す
+    formatted_items = []
+    for item in items:
+        formatted_item = {
+            "id": item[0],
+            "name": item[1],
+            "category": item[2],
+            "image_name": item[3]
+        }
+        formatted_items.append(formatted_item)
+
+    return formatted_items
 
 @app.get("/image/{image_name}")
 async def get_image(image_name):
@@ -106,9 +144,11 @@ async def get_image(image_name):
 
 @app.get("/search/{search_item}")
 def search_item(search_item:str):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
     cur.execute("SELECT name, category, image_name FROM items WHERE name LIKE ?",("%"+search_item+"%",))
     items= cur.fetchall()
+    conn.commit()
+    conn.close()
     return {"items":items}
 
-conn.commit()
-conn.close()
