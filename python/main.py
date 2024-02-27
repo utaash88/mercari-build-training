@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 
-db_path = pathlib.Path(__file__).parent.resolve() /"mercari.sqlite3"
+db_path = pathlib.Path(__file__).parent.resolve() /"mercari.sqlite3.new"
 images = pathlib.Path(__file__).parent.resolve() /"images"
 items_json_path = pathlib.Path(__file__).parent.resolve() / "items.json"
 
