@@ -1,10 +1,13 @@
 import os
+import sqlite3
 import json
 import logging
 import pathlib
+from fastapi import FastAPI, Form, HTTPException
+from fastapi.responses import FileResponse
 import hashlib
-from fastapi import FastAPI, Form, UploadFile, HTTPException, File
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Form, HTTPException, File, UploadFile
+from fastapi.responses import FileResponse , JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -12,7 +15,7 @@ app = FastAPI()
 
 logger = logging.getLogger("uvicorn")
 logger.level = logging.INFO
-images = pathlib.Path(__file__).parent.resolve() / "images"
+
 origins = [os.environ.get("FRONT_URL", "http://localhost:3000")]
 app.add_middleware(
     CORSMiddleware,
@@ -22,67 +25,106 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#items_json = pathlib.Path(__file__).parent.resolve() / "items.json"
+db_path = pathlib.Path(__file__).parent.parent.resolve() /"db"/"new.mercari.sqlite3"
+images = pathlib.Path(__file__).parent.resolve() /"images"
+items_json_path = pathlib.Path(__file__).parent.resolve() / "items.json"
 
-#モード
-#r:読み込み（デフォルト）
-#w:書き込み
-#a:追記
-#r+:読み込みと書き込み
+def initialize_database():
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            category TEXT,
+            image_name TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def save_item_db(name, category, image_name):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)", (name, category, image_name))
+    conn.commit()
+    conn.close() 
 
 @app.get("/")
 async def root():
     return {"message": "Hello, world!"}
 
 @app.post("/items")
-async def add_item(name: str = Form(...), category: str=Form(...), image: UploadFile= File(...)):
-    logger.info(f"Receive item: {name},{category},image:{image.filename}")
-    
-    images = pathlib.Path(__file__).parent.resolve() /"images"
-    #アップロードされたファイルの内容を非同期で読み込む
-    contents= await image.read()
-    hash_sha256=hashlib.sha256(contents).hexdigest()
-    image_filename=f"{hash_sha256}.jpg"
-    image_path=images/image_filename
-    with open(image_path,"wb") as f:
+async def add_item(name: str = Form(...), category: str = Form(...), image: UploadFile = File(...)):
+    logger.info(f"Receive item: {name}, {category}, image: {image.filename}")
+
+    # 画像のハッシュ値を計算してファイル名とする
+    contents = await image.read()
+    hash_sha256 = hashlib.sha256(contents).hexdigest()
+    image_filename = f"{hash_sha256}.jpg"
+    image_path = images / image_filename
+
+    # 画像を保存
+    with open(image_path, "wb") as f:
         f.write(contents)
-        
-    #loadでjsonファイルをPythonのデータ構造に変換する
-    
-    #書き込みモードにしてnew_itemをitems.jsonに追加する
-    
-    new_item={"items": [{"name": name, "category": category,"image_name": image_filename}]}
-    loading_json(new_item)
 
-    return {"message": f"item received: {name},{category},{image}"}
+    #sqliteに追加
+    """ cur.execute("SELECT id FROM categories WHERE name = ?", (category,))
+    category_result = cur.fetchone()
 
-def loading_json(new_item):
-    with open("items.json","r") as f:
-        json_load=json.load(f)
-    
-    json_load["items"].append(new_item)
+    if not category_result:
+        cur.execute("INSERT INTO categories (name) VALUES (?)", (category_name,))
+        conn.commit()
+        category_id = cur.lastrowid
+    else:
+        category_id = category_result[0]
 
+    cur.execute("INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)", (name, category_name, image_filename))
+    conn.commit() """
 
-    with open("items.json","w") as f:
-        json_dump=json.dump(json_load, f,indent=4)
+    save_item_db(name, category, image_filename)
 
+    # 新しいアイテムをJSONファイルに追加
+    # new_item = {"name": name, "category": category, "image_name": image_filename}
+    # with open(items_json_path, "r+") as f:
+    #     items = json.load(f)
+    #     items["items"].append(new_item)
+    #     f.seek(0)
+    #     json.dump(items, f, indent=4)
+
+    return {"message": f"item received: {name}, {category}, {image_filename}"}
 
 
 @app.get("/items")
 def get_items():
-    with open("items.json", "r") as f:
+    """ # JSONファイルからアイテムを読み込み
+    with open(items_json_path, "r") as f:
         items = json.load(f)
-    return items
+    return items """
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT items.id, items.name, categories.name as category, items.image_name
+        FROM items
+        INNER JOIN categories ON items.category_id = categories.id
+    """)
+    items = cur.fetchall()
 
-@app.get("/items/{item_id}")
-def get_item_id(item_id: int):
-    with open("items.json", "r") as f:
-        data = json.load(f)
-    
-    if 0 <= item_id < len(data["items"]):
-        return data["items"][item_id]
-    else:
-        raise HTTPException(status_code=404, detail="Item not found")
+    conn.close()
+
+    # 取得したデータを適切な形式に整形して返す
+    formatted_items = []
+    for item in items:
+        formatted_item = {
+            "id": item[0],
+            "name": item[1],
+            "category": item[2],
+            "image_name": item[3]
+        }
+        formatted_items.append(formatted_item)
+
+    return formatted_items
     
 @app.get("/image/{image_name}")
 async def get_image(image_name):
@@ -95,5 +137,16 @@ async def get_image(image_name):
     if not image.exists():
         logger.debug(f"Image not found: {image}")
         image = images / "default.jpg"
-
     return FileResponse(image)
+  
+  
+@app.get("/search/{search_item}")
+def search_item(search_item:str):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT name, category, image_name FROM items WHERE name LIKE ?",("%"+search_item+"%",))
+    items= cur.fetchall()
+    conn.commit()
+    conn.close()
+    return {"items":items}
+
