@@ -25,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-db_path = pathlib.Path(__file__).parent.resolve() /"new.mercari.sqlite3"
+db_path = pathlib.Path(__file__).parent.parent.resolve() /"db"/"new.mercari.sqlite3"
 images = pathlib.Path(__file__).parent.resolve() /"images"
 items_json_path = pathlib.Path(__file__).parent.resolve() / "items.json"
 
@@ -55,9 +55,7 @@ def save_item_db(name, category, image_name):
 async def root():
     return {"message": "Hello, world!"}
 
-
-  
-  @app.post("/items")
+@app.post("/items")
 async def add_item(name: str = Form(...), category: str = Form(...), image: UploadFile = File(...)):
     logger.info(f"Receive item: {name}, {category}, image: {image.filename}")
 
@@ -88,12 +86,12 @@ async def add_item(name: str = Form(...), category: str = Form(...), image: Uplo
     save_item_db(name, category, image_filename)
 
     # 新しいアイテムをJSONファイルに追加
-    new_item = {"name": name, "category": category, "image_name": image_filename}
-    with open(items_json_path, "r+") as f:
-        items = json.load(f)
-        items.append(new_item)
-        f.seek(0)
-        json.dump(items, f, indent=4)
+    # new_item = {"name": name, "category": category, "image_name": image_filename}
+    # with open(items_json_path, "r+") as f:
+    #     items = json.load(f)
+    #     items["items"].append(new_item)
+    #     f.seek(0)
+    #     json.dump(items, f, indent=4)
 
     return {"message": f"item received: {name}, {category}, {image_filename}"}
 
